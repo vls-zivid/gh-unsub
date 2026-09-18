@@ -27,30 +27,35 @@ def is_whitelisted(n):
             or reason in whitelist.get("reasons", [])
             or n["id"] in whitelist.get("thread_ids", []))
 
-def run(dry_run=False):
+def fetch_notifications():
+    notifications = []
     url = f"{API}/notifications"
     params = {"all": "true", "per_page": 100}
-    seen = 0
     while url:
         r = requests.get(url, headers=HEADERS, params=params)
         r.raise_for_status()
-        for n in r.json():
-            seen += 1
-            if not is_whitelisted(n):
-                tid = n["id"]
-                label = f"{n['repository']['full_name']} - {n['subject']['title']}"
-                if dry_run:
-                    print(f"Would unsubscribe: {label}")
-                    continue
-                put = requests.put(f"{API}/notifications/threads/{tid}/subscription",
-                                    headers=HEADERS, json={"ignored": True})
-                if put.ok:
-                    print(f"Unsubscribed: {label}")
-                else:
-                    print(f"Failed to unsubscribe ({put.status_code}): {label}")
+        notifications.extend(r.json())
         url = r.links.get("next", {}).get("url")
         params = None
-    print(f"\n{seen} notification(s) checked.")
+    return notifications
+
+def run(dry_run=False):
+    notifications = fetch_notifications()
+    for n in notifications:
+        if is_whitelisted(n):
+            continue
+        tid = n["id"]
+        label = f"{n['repository']['full_name']} - {n['subject']['title']}"
+        if dry_run:
+            print(f"Would unsubscribe: {label}")
+            continue
+        put = requests.put(f"{API}/notifications/threads/{tid}/subscription",
+                            headers=HEADERS, json={"ignored": True})
+        if put.ok:
+            print(f"Unsubscribed: {label}")
+        else:
+            print(f"Failed to unsubscribe ({put.status_code}): {label}")
+    print(f"\n{len(notifications)} notification(s) checked.")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
